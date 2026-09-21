@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Project;
+use App\Models\Task;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -48,7 +51,45 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * @param  array<string, mixed>  $attributes
+ * @return array{owner: User, project: Project}
+ */
+function actingAsProjectOwner(array $attributes = []): array
 {
-    // ..
+    $owner = User::factory()->create();
+    $project = Project::factory()->for($owner, 'owner')->create($attributes);
+
+    return compact('owner', 'project');
+}
+
+/**
+ * @param  array<string, mixed>  $taskAttributes
+ * @param  array<string, mixed>  $projectAttributes
+ * @return array{owner: User, project: Project, task: Task}
+ */
+function taskOnOwnedProject(array $taskAttributes = [], array $projectAttributes = []): array
+{
+    ['owner' => $owner, 'project' => $project] = actingAsProjectOwner($projectAttributes);
+
+    $task = Task::factory()
+        ->for($project)
+        ->for($owner, 'creator')
+        ->create($taskAttributes);
+
+    return compact('owner', 'project', 'task');
+}
+
+/**
+ * @return array{owner: User, project: Project}
+ */
+function projectWithOwner(): array
+{
+    $owner = new User;
+    $owner->id = 1;
+
+    $project = new Project;
+    $project->owner_id = 1;
+
+    return compact('owner', 'project');
 }
