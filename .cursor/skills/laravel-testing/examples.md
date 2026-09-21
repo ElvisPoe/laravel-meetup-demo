@@ -88,7 +88,9 @@ it('should allow the owner to update the project name', function () {
 });
 ```
 
-## 4. Custom helper when Arrange repeats more than twice
+## 4. Custom helper — rare
+
+Keep Arrange in the test. Use a helper only when the same few lines are copied so often that repeating them is harder to read. Not on the first repeat.
 
 In `tests/Pest.php`:
 
@@ -102,7 +104,7 @@ function actingAsProjectOwner(): array
 }
 ```
 
-In the test file, after the third copy of that scene:
+In the test file, once repeating the scene is harder to read than calling it:
 
 ```php
 it('should list tasks on the owners project', function () {
