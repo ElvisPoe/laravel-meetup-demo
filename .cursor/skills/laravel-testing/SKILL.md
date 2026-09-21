@@ -1,11 +1,15 @@
 ---
 name: laravel-testing
-description: Write clean Pest 5 tests for this Laravel app using AAA, factories, fakes, and GET-then-create-then-update happy paths. Use when writing, generating, or refactoring tests — feature, unit, HTTP, architecture, coverage, TIA, --parallel, --filter, Pest Agent, or TDD.
+description: Write clean Pest 5 tests for this Laravel app using AAA, factories, fakes, and GET-then-create-then-update happy paths. Tests and the setup around them stay very simple. Use when writing, generating, or refactoring tests — feature, unit, HTTP, architecture, coverage, TIA, --parallel, --filter, Pest Agent, or TDD.
 ---
 
 # Laravel Testing (Pest 5)
 
 Write **Pest** tests only — never PHPUnit class syntax. Always use Laravel's best practices and write clean, maintainable code. Follow the [laravel-best-practices](../laravel-best-practices/SKILL.md) skill for application code under test.
+
+**ALWAYS write tests and the logic around them VERY simple. No over engineering in tests or their setup.**
+
+A test is a factory (or two), one action, and the outcome. Setup that needs a tour is too much. Leave the lines in the test. Do not invent helpers, datasets, custom expectations, base classes, traits, or `Pest.php` functions to hold a scene you could read inline. Reach for those only when the same few lines are copied so often that repeating them is harder to read, and the extracted function is obvious in one glance.
 
 **Pest 5 docs (always):** [pestphp.com/docs/pest5-now-available](https://pestphp.com/docs/pest5-now-available)
 
@@ -17,11 +21,12 @@ These apply every time tests are written, changed, or run.
 
 | Rule | Do this |
 | --- | --- |
+| Simple | ALWAYS write tests and the logic around them VERY simple. No over engineering in tests or their setup. |
 | Order | Start with **GET** endpoints. Then **create**. Then **updates**. Happy paths first. |
 | Clean tests | Always AAA (`// Arrange`, `// Act`, `// Assert`). Names a developer can read with almost no effort. |
 | Data | Always **create and use factories** for resources. Never manual inserts or seeders-per-test. |
 | Isolation | Always **mocks and fakes**. Never real HTTP, mail, storage, or third-party clients. |
-| Helpers | If the same Arrange scene appears **more than twice**, extract a custom helper. |
+| Helpers | Keep Arrange in the test. Extract a helper only when the same few lines are copied so often that repeating them is harder to read. |
 | Coverage | Aim for **decent coverage**. Never chase 100%. |
 | Architecture | Set up Pest `arch()` tests **when needed** to protect conventions. |
 | Local runs | Prefer `--filter`, `--parallel`, and `--tia`. |
@@ -33,13 +38,14 @@ These apply every time tests are written, changed, or run.
 Copy this checklist while working:
 
 ```
+- [ ] Tests and setup are VERY simple — no over engineering
 - [ ] GET happy paths first
 - [ ] Then create happy paths
 - [ ] Then update happy paths
 - [ ] AAA + readable it('should ...') names
 - [ ] Factories for all resources
 - [ ] Fakes/mocks — no real clients
-- [ ] Helper if the same Arrange is used a 3rd time
+- [ ] Arrange stays in the test unless a tiny helper is clearly easier to read
 - [ ] Decent coverage — stop before 100% chasing
 - [ ] arch() only if a convention needs a guard
 - [ ] Narrowest local run (--filter / --parallel / --tia)
@@ -122,7 +128,9 @@ In feature tests prefer the real app + fakes. Mock only what you own, and only w
 
 ## Custom helpers
 
-If the same Arrange scene appears **more than twice** (a third copy), extract a helper in the `Functions` section of `tests/Pest.php` (or a dedicated test helper file if one already exists). Name it after the scene, not the test.
+Default is no helper. Write the factory calls in the test.
+
+Extract a helper in the `Functions` section of `tests/Pest.php` (or a dedicated test helper file if one already exists) only when the same few Arrange lines are copied so often that repeating them is harder to read. Name it after the scene, not the test. The helper is a few obvious lines, not a setup framework.
 
 ```php
 function actingAsProjectOwner(): array
