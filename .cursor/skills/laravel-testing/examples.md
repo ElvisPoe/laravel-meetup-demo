@@ -1,165 +1,156 @@
-# Laravel Testing — Reference Examples (Pest)
+# Laravel Testing — Reference Examples (Pest 5)
 
-All examples follow AAA (Arrange-Act-Assert) with `// Arrange`, `// Act`, `// Assert` comments and behavior-based names.
+All examples use AAA with `// Arrange`, `// Act`, `// Assert` and `it('should ...')` names. Write GET happy paths first, then create, then updates.
 
-## Feature test (full coverage of one endpoint)
+Docs: https://pestphp.com/docs/pest5-now-available
 
-`tests/Feature/PaymentTest.php`
+## 1. GET happy path
+
+`tests/Feature/ProjectTest.php`
 
 ```php
 <?php
 
+use App\Models\Project;
 use App\Models\User;
-use App\Models\Payment;
-use App\Events\PaymentCreated;
-use App\Mail\PaymentReceipt;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
 
-it('should allow user to create payment', function () {
+it('should list projects for the authenticated user', function () {
     // Arrange
-    $user = User::factory()->create(['balance' => 500_00]);
+    $user = User::factory()->create();
+    $project = Project::factory()->for($user, 'owner')->create(['name' => 'Board']);
 
     // Act
-    $response = $this->actingAs($user)
-        ->postJson('/api/payments', ['amount' => 100_00, 'currency' => 'EUR']);
+    $response = $this->actingAs($user)->getJson('/api/projects');
 
     // Assert
-    $response->assertCreated()
-        ->assertJsonPath('data.amount', 100_00);
-    $this->assertDatabaseHas('payments', [
-        'user_id' => $user->id,
-        'amount' => 100_00,
-        'currency' => 'EUR',
-    ]);
+    $response->assertOk()
+        ->assertJsonPath('data.0.id', $project->id)
+        ->assertJsonPath('data.0.name', 'Board');
 });
 
-it('should reject payment when balance is insufficient', function () {
+it('should show a project the user can access', function () {
     // Arrange
-    $user = User::factory()->create(['balance' => 50_00]);
+    $user = User::factory()->create();
+    $project = Project::factory()->for($user, 'owner')->create();
 
     // Act
-    $response = $this->actingAs($user)
-        ->postJson('/api/payments', ['amount' => 100_00, 'currency' => 'EUR']);
+    $response = $this->actingAs($user)->getJson("/api/projects/{$project->id}");
 
     // Assert
-    $response->assertUnprocessable()
-        ->assertJsonValidationErrors(['amount']);
-    $this->assertDatabaseCount('payments', 0);
+    $response->assertOk()
+        ->assertJsonPath('data.id', $project->id);
 });
+```
 
-it('should forbid guest from creating payment', function () {
-    // Act
-    $response = $this->postJson('/api/payments', ['amount' => 100_00]);
+## 2. Create happy path
 
-    // Assert
-    $response->assertUnauthorized();
-});
-
-it('should forbid user from viewing another users payment', function () {
-    // Arrange
-    $payment = Payment::factory()->create();
-    $otherUser = User::factory()->create();
-
-    // Act
-    $response = $this->actingAs($otherUser)
-        ->getJson("/api/payments/{$payment->id}");
-
-    // Assert
-    $response->assertForbidden();
-});
-
-it('should send receipt email after successful payment', function () {
-    // Arrange
-    Mail::fake();
-    $user = User::factory()->create(['balance' => 500_00]);
-
-    // Act
-    $this->actingAs($user)
-        ->postJson('/api/payments', ['amount' => 100_00, 'currency' => 'EUR'])
-        ->assertCreated();
-
-    // Assert
-    Mail::assertSent(PaymentReceipt::class, fn ($mail) => $mail->hasTo($user->email));
-});
-
-it('should dispatch payment created event', function () {
-    // Arrange
-    Event::fake([PaymentCreated::class]);
-    $user = User::factory()->create(['balance' => 500_00]);
-
-    // Act
-    $this->actingAs($user)
-        ->postJson('/api/payments', ['amount' => 100_00, 'currency' => 'EUR'])
-        ->assertCreated();
-
-    // Assert
-    Event::assertDispatched(PaymentCreated::class);
-});
-
-it('should reject payment with invalid amount', function (mixed $amount) {
+```php
+it('should allow the owner to create a project', function () {
     // Arrange
     $user = User::factory()->create();
 
     // Act
     $response = $this->actingAs($user)
-        ->postJson('/api/payments', ['amount' => $amount, 'currency' => 'EUR']);
+        ->postJson('/api/projects', ['name' => 'Meetup board']);
 
     // Assert
-    $response->assertJsonValidationErrors(['amount']);
-})->with([
-    'zero' => 0,
-    'negative' => -100,
-    'non-numeric' => 'abc',
-]);
-```
-
-## Unit test
-
-`tests/Unit/FeeCalculatorTest.php`
-
-```php
-<?php
-
-use App\Services\FeeCalculator;
-
-it('should calculate two percent fee for standard payments', function () {
-    // Arrange
-    $calculator = new FeeCalculator();
-
-    // Act
-    $fee = $calculator->calculate(amount: 100_00);
-
-    // Assert
-    expect($fee)->toBe(2_00);
-});
-
-it('should apply minimum fee for small amounts', function () {
-    // Arrange
-    $calculator = new FeeCalculator();
-
-    // Act
-    $fee = $calculator->calculate(amount: 1_00);
-
-    // Assert
-    expect($fee)->toBe(FeeCalculator::MINIMUM_FEE);
+    $response->assertCreated()
+        ->assertJsonPath('data.name', 'Meetup board');
+    $this->assertDatabaseHas('projects', [
+        'user_id' => $user->id,
+        'name' => 'Meetup board',
+    ]);
 });
 ```
 
-## Mocking an owned service (external gateway)
+## 3. Update happy path
 
 ```php
-<?php
+it('should allow the owner to update the project name', function () {
+    // Arrange
+    $user = User::factory()->create();
+    $project = Project::factory()->for($user, 'owner')->create(['name' => 'Old']);
 
-use App\Models\User;
+    // Act
+    $response = $this->actingAs($user)
+        ->putJson("/api/projects/{$project->id}", ['name' => 'New']);
+
+    // Assert
+    $response->assertOk()
+        ->assertJsonPath('data.name', 'New');
+    $this->assertDatabaseHas('projects', [
+        'id' => $project->id,
+        'name' => 'New',
+    ]);
+});
+```
+
+## 4. Custom helper when Arrange repeats more than twice
+
+In `tests/Pest.php`:
+
+```php
+function actingAsProjectOwner(): array
+{
+    $owner = \App\Models\User::factory()->create();
+    $project = \App\Models\Project::factory()->for($owner, 'owner')->create();
+
+    return compact('owner', 'project');
+}
+```
+
+In the test file, after the third copy of that scene:
+
+```php
+it('should list tasks on the owners project', function () {
+    // Arrange
+    ['owner' => $owner, 'project' => $project] = actingAsProjectOwner();
+    $task = Task::factory()->for($project)->create(['title' => 'Ship slides']);
+
+    // Act
+    $response = $this->actingAs($owner)
+        ->getJson("/api/projects/{$project->id}/tasks");
+
+    // Assert
+    $response->assertOk()
+        ->assertJsonPath('data.0.id', $task->id)
+        ->assertJsonPath('data.0.title', 'Ship slides');
+});
+```
+
+## 5. Isolation — fakes (mail / events)
+
+```php
+use App\Mail\MemberAddedToProjectMail;
+use Illuminate\Support\Facades\Mail;
+
+it('should email the member when they are added to a project', function () {
+    // Arrange
+    Mail::fake();
+    $owner = User::factory()->create();
+    $project = Project::factory()->for($owner, 'owner')->create();
+    $member = User::factory()->create();
+
+    // Act
+    $this->actingAs($owner)
+        ->postJson("/api/projects/{$project->id}/members", [
+            'user_id' => $member->id,
+        ])
+        ->assertCreated();
+
+    // Assert
+    Mail::assertSent(MemberAddedToProjectMail::class, fn ($mail) => $mail->hasTo($member->email));
+});
+```
+
+## 6. Isolation — mock an owned client
+
+```php
 use App\Services\PaymentGateway;
 use App\Exceptions\GatewayException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('should mark payment as failed when gateway declines', function () {
     // Arrange
@@ -179,18 +170,14 @@ it('should mark payment as failed when gateway declines', function () {
 });
 ```
 
-## Faking external HTTP
+## 7. Isolation — fake outbound HTTP
 
 ```php
-<?php
-
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-
-uses(RefreshDatabase::class);
 
 it('should store exchange rate from external provider', function () {
     // Arrange
+    Http::preventStrayRequests();
     Http::fake([
         'api.rates.test/*' => Http::response(['EUR' => 1.08], 200),
     ]);
@@ -204,7 +191,67 @@ it('should store exchange rate from external provider', function () {
 });
 ```
 
-## Time-sensitive behavior
+## 8. Auth / validation (after happy paths)
+
+```php
+it('should forbid guests from listing projects', function () {
+    // Act
+    $response = $this->getJson('/api/projects');
+
+    // Assert
+    $response->assertUnauthorized();
+});
+
+it('should reject a project without a name', function () {
+    // Arrange
+    $user = User::factory()->create();
+
+    // Act
+    $response = $this->actingAs($user)->postJson('/api/projects', []);
+
+    // Assert
+    $response->assertJsonValidationErrors(['name']);
+});
+
+it('should reject payment with invalid amount', function (mixed $amount) {
+    // Arrange
+    $user = User::factory()->create();
+
+    // Act
+    $response = $this->actingAs($user)
+        ->postJson('/api/payments', ['amount' => $amount, 'currency' => 'EUR']);
+
+    // Assert
+    $response->assertJsonValidationErrors(['amount']);
+})->with([
+    'zero' => 0,
+    'negative' => -100,
+    'non-numeric' => 'abc',
+]);
+```
+
+## 9. Unit test
+
+`tests/Unit/FeeCalculatorTest.php`
+
+```php
+<?php
+
+use App\Services\FeeCalculator;
+
+it('should calculate two percent fee for standard payments', function () {
+    // Arrange
+    $calculator = new FeeCalculator();
+
+    // Act
+    $fee = $calculator->calculate(amount: 100_00);
+
+    // Assert
+    expect($fee)->toBe(2_00);
+});
+```
+
+## 10. Time travel
 
 ```php
 it('should expire payment link after 24 hours', function () {
@@ -219,4 +266,41 @@ it('should expire payment link after 24 hours', function () {
     // Assert
     $response->assertGone();
 });
+```
+
+## 11. Architecture (only when a convention needs a guard)
+
+`tests/Feature/ArchitectureTest.php`
+
+```php
+<?php
+
+arch('models extend eloquent')
+    ->expect('App\Models')
+    ->toExtend('Illuminate\Database\Eloquent\Model');
+
+arch('actions are invokable')
+    ->expect('App\Actions')
+    ->toBeClasses()
+    ->toHaveMethod('handle');
+
+arch('app does not debug dump')
+    ->expect('App')
+    ->not->toUse(['dd', 'dump', 'die']);
+```
+
+## 12. Pest Agent probes (UI / one-off)
+
+Agent + Browser are installed. Prefer `tests/Browser` for checks that should stay.
+
+```bash
+./vendor/bin/pest --agent='visit("/")->assertSee("Your projects");'
+./vendor/bin/pest --agent='$user = \App\Models\User::factory()->create(); $project = \App\Models\Project::factory()->for($user, "owner")->create(["name" => "Meetup board"]); visit("/")->assertSee("Meetup board");'
+./vendor/bin/pest --agent='visit("/")->on()->mobile()->screenshot(filename: "board-mobile");'
+```
+
+Backend-only:
+
+```bash
+./vendor/bin/pest --agent='$this->get("/")->assertOk();'
 ```

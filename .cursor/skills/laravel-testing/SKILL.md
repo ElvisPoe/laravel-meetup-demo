@@ -1,99 +1,248 @@
 ---
 name: laravel-testing
-description: Write clean, best-practice Pest tests for this Laravel application. Always follows the AAA (Arrange-Act-Assert) pattern with // Arrange, // Act, // Assert comments and descriptive behavior-based names like it('should allow user to create payment'). Use when writing, generating, or refactoring tests — feature tests, unit tests, HTTP tests, or when the user mentions Pest, TDD, or test coverage.
+description: Write clean Pest 5 tests for this Laravel app using AAA, factories, fakes, and GET-then-create-then-update happy paths. Use when writing, generating, or refactoring tests — feature, unit, HTTP, architecture, coverage, TIA, --parallel, --filter, Pest Agent, or TDD.
 ---
 
-# Laravel Testing (Pest)
+# Laravel Testing (Pest 5)
 
-This project uses **Pest 4** with `pest-plugin-laravel` on Laravel 13. Tests run against an in-memory SQLite database (`phpunit.xml`), with array mail/cache/session drivers and a sync queue. Write all tests in Pest style — never PHPUnit class syntax.
+Write **Pest** tests only — never PHPUnit class syntax. Always use Laravel's best practices and write clean, maintainable code. Follow the [laravel-best-practices](../laravel-best-practices/SKILL.md) skill for application code under test.
 
-## Step 1: Decide Feature vs Unit
+**Pest 5 docs (always):** [pestphp.com/docs/pest5-now-available](https://pestphp.com/docs/pest5-now-available)
 
-- **Feature test** (`tests/Feature/`): anything touching HTTP routes, database, jobs, commands, middleware, policies. This is the default for Laravel — most tests should be feature tests. Feature tests are bound to `Tests\TestCase` via `tests/Pest.php`.
-- **Unit test** (`tests/Unit/`): pure logic with no framework boot — value objects, calculators, formatters, enums, small services with mocked dependencies.
+This app is Laravel 13 + Pest 5 (`pest-plugin-laravel`). Tests use in-memory SQLite, array mail/cache/session, and a sync queue (`phpunit.xml`). `php artisan test` runs Pest.
 
-## Step 2: Naming — behavior, not implementation
+## Standing rules
 
-Every test name describes a behavior from the user's or system's perspective, in the form `should <expected behavior> when/if/for <condition>` (condition optional when obvious), inside `it()`:
+These apply every time tests are written, changed, or run.
 
-```php
-it('should allow user to create payment', ...)
-it('should reject payment when balance is insufficient', ...)
-it('should send receipt email after successful payment', ...)
+| Rule | Do this |
+| --- | --- |
+| Order | Start with **GET** endpoints. Then **create**. Then **updates**. Happy paths first. |
+| Clean tests | Always AAA (`// Arrange`, `// Act`, `// Assert`). Names a developer can read with almost no effort. |
+| Data | Always **create and use factories** for resources. Never manual inserts or seeders-per-test. |
+| Isolation | Always **mocks and fakes**. Never real HTTP, mail, storage, or third-party clients. |
+| Helpers | If the same Arrange scene appears **more than twice**, extract a custom helper. |
+| Coverage | Aim for **decent coverage**. Never chase 100%. |
+| Architecture | Set up Pest `arch()` tests **when needed** to protect conventions. |
+| Local runs | Prefer `--filter`, `--parallel`, and `--tia`. |
+| UI checks | Run **Pest Agent** when the UI must look or behave as expected. |
+| CI | **Never commit and never push** if any CI step is failing. |
+| Code | Always Laravel best practices. Always clean, maintainable code. |
+| Docs | Always Pest 5 docs: https://pestphp.com/docs/pest5-now-available |
+
+Copy this checklist while working:
+
+```
+- [ ] GET happy paths first
+- [ ] Then create happy paths
+- [ ] Then update happy paths
+- [ ] AAA + readable it('should ...') names
+- [ ] Factories for all resources
+- [ ] Fakes/mocks — no real clients
+- [ ] Helper if the same Arrange is used a 3rd time
+- [ ] Decent coverage — stop before 100% chasing
+- [ ] arch() only if a convention needs a guard
+- [ ] Narrowest local run (--filter / --parallel / --tia)
+- [ ] Pest Agent if UI must be verified
+- [ ] Do not commit or push on a failing CI step
 ```
 
-Bad names to avoid: `it('works')`, `it('tests payment')`, `it('payment controller store method')`.
+## What to write, and in what order
 
-## Step 3: Structure — always AAA
+1. List routes: `php artisan route:list --path=api --except-vendor` (also web routes that hit the DB).
+2. **GET happy paths** — index and show return the right status and payload for an authorized user.
+3. **Create happy paths** — store persists and returns the created resource.
+4. **Update happy paths** — update persists and returns the changed resource.
+5. Only then add guests, forbidden users, validation, and important edges (empty list, duplicate, domain exception). Skip low-value branches. Decent coverage is enough.
 
-Every test body has exactly three blocks separated by blank lines, in this order, each marked with its `// Arrange`, `// Act`, `// Assert` comment. Tests with no setup skip the Arrange block entirely.
+Group tests by resource (`tests/Feature/ProjectTest.php`, `TaskTest.php`). One behavior per `it()`.
+
+## Feature vs unit
+
+- **Feature** (`tests/Feature/`): HTTP, DB, jobs, commands, middleware, policies. Default. Bound to `Tests\TestCase` in `tests/Pest.php`.
+- **Unit** (`tests/Unit/`): pure logic — enums, formatters, calculators, small services with mocked deps. No Laravel HTTP/DB boot unless the file already does.
+
+## Names
+
+`it('should <expected behavior> when/if/for <condition>')`. Condition optional when obvious.
 
 ```php
-it('should allow user to create payment', function () {
+it('should list projects for the authenticated user', ...)
+it('should allow the owner to create a project', ...)
+it('should allow the owner to update the project name', ...)
+```
+
+Avoid: `it('works')`, `it('tests project')`, `it('project controller index')`.
+
+## AAA — every test
+
+Three blocks, blank line between them, comments required. Skip Arrange only when there is no setup.
+
+```php
+it('should list projects for the authenticated user', function () {
     // Arrange
-    $user = User::factory()->create(['balance' => 500_00]);
+    $user = User::factory()->create();
+    $project = Project::factory()->for($user, 'owner')->create(['name' => 'Board']);
 
     // Act
-    $response = $this->actingAs($user)
-        ->postJson('/api/payments', ['amount' => 100_00, 'currency' => 'EUR']);
+    $response = $this->actingAs($user)->getJson('/api/projects');
 
     // Assert
-    $response->assertCreated();
-    $this->assertDatabaseHas('payments', [
-        'user_id' => $user->id,
-        'amount' => 100_00,
-    ]);
+    $response->assertOk()
+        ->assertJsonPath('data.0.id', $project->id)
+        ->assertJsonPath('data.0.name', 'Board');
 });
 ```
 
-Rules:
+- One behavior per test. Several asserts are fine if they prove that one behavior.
+- No `if`, `foreach`, or `try/catch` in tests. Use `->with()` datasets for variations.
+- Act is one call under test when possible.
+- Assert outcomes (status, JSON, DB, faked mail/events) — not private internals.
 
-- One behavior per test. Multiple asserts are fine if they verify the same behavior.
-- No logic in tests: no `if`, `foreach`, `try/catch`. Use `with()` datasets for variations.
-- Arrange with **factories**, never manual inserts or seeders-per-test. Use factory states (`->suspended()`, `->withBalance()`) instead of repeating attribute arrays.
-- Act is ideally a single statement — the one call under test.
-- Assert observable outcomes (response, database, dispatched events), not internals.
+Full GET / create / update / helper / isolation / `arch()` samples: [examples.md](examples.md).
 
-## Step 4: Laravel best practices
+## Factories
 
-- **Database**: `RefreshDatabase` is NOT enabled globally in `tests/Pest.php`. Any test file that touches the database must declare it at the top: `uses(Illuminate\Foundation\Testing\RefreshDatabase::class);`. Assert with `assertDatabaseHas` / `assertDatabaseMissing` / `assertDatabaseCount` / `assertSoftDeleted`.
-- **Fakes over mocks** for framework services: `Mail::fake()`, `Notification::fake()`, `Queue::fake()`, `Event::fake()`, `Storage::fake()`, `Bus::fake()`, `Http::fake()`. Fake in Arrange, assert in Assert (`Mail::assertSent(...)`).
-- **External APIs**: always `Http::fake([...])` with explicit URL patterns — never hit real networks. Add `Http::preventStrayRequests()` when possible.
-- **Auth**: `$this->actingAs($user)`; test authorization explicitly (`assertForbidden` for the wrong user/role).
-- **Time**: freeze with `$this->travelTo(...)` or `Carbon::setTestNow(...)`. Never `sleep()`.
-- **HTTP assertions**: prefer specific ones — `assertCreated`, `assertOk`, `assertNoContent`, `assertForbidden`, `assertNotFound`, `assertJsonValidationErrors(['field'])`, `assertJsonPath('data.id', $id)`.
-- **Expectations**: in unit tests prefer Pest's `expect($value)->toBe(...)` API over `$this->assert*`.
-- **Mock only what you own** (your own services/repositories, via `$this->mock(...)`), and only when faking isn't possible. In feature tests prefer the real container bindings plus fakes.
-- **Coverage per feature**: happy path, validation failures, authorization failures, and important edge cases (empty state, boundary values, duplicates).
+Always factories for users, projects, members, tasks, comments, and any other model.
 
-## Step 5: Variations via datasets
+- Prefer factory states and relationships (`->for($project)`, `->open()`, `Project::factory()->hasTasks(2)`) over repeating attribute arrays.
+- If a factory is missing, create it (`php artisan make:factory --no-interaction`) and use it — do not `Model::query()->create([...])` in tests.
+
+## Isolation — mocks and fakes
+
+Keep the suite off real clients.
+
+- Framework: `Mail::fake()`, `Notification::fake()`, `Queue::fake()`, `Event::fake()`, `Storage::fake()`, `Bus::fake()`, `Http::fake()`. Fake in Arrange, assert in Assert.
+- Outbound HTTP: `Http::fake([...])` with URL patterns. Prefer `Http::preventStrayRequests()`. Never hit the network.
+- Owned services (gateways, SDKs): `$this->mock(TheClient::class)`.
+- Time: `$this->travelTo(...)` / `Carbon::setTestNow(...)`. Never `sleep()`.
+- Auth: `$this->actingAs($user)`.
+
+In feature tests prefer the real app + fakes. Mock only what you own, and only when a fake cannot replace it.
+
+## Custom helpers
+
+If the same Arrange scene appears **more than twice** (a third copy), extract a helper in the `Functions` section of `tests/Pest.php` (or a dedicated test helper file if one already exists). Name it after the scene, not the test.
 
 ```php
-it('should reject payment with invalid amount', function (mixed $amount) {
-    // Arrange
-    $user = User::factory()->create();
+function actingAsProjectOwner(): array
+{
+    $owner = User::factory()->create();
+    $project = Project::factory()->for($owner, 'owner')->create();
 
-    // Act
-    $response = $this->actingAs($user)
-        ->postJson('/api/payments', ['amount' => $amount, 'currency' => 'EUR']);
-
-    // Assert
-    $response->assertJsonValidationErrors(['amount']);
-})->with([
-    'zero' => 0,
-    'negative' => -100,
-    'non-numeric' => 'abc',
-]);
+    return compact('owner', 'project');
+}
 ```
 
-## Step 6: Run and verify
+Do not extract after a single repeat. Do not hide the Act/Assert behind a mega-helper.
 
-After writing tests, always run them and fix failures before finishing:
+## Database
+
+`RefreshDatabase` is **not** global (`tests/Pest.php` has it commented out). Every file that touches the DB must start with:
+
+```php
+uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
+```
+
+Assert with `assertDatabaseHas` / `assertDatabaseMissing` / `assertDatabaseCount` / `assertSoftDeleted`.
+
+## HTTP asserts
+
+Prefer `assertOk`, `assertCreated`, `assertNoContent`, `assertUnauthorized`, `assertForbidden`, `assertNotFound`, `assertUnprocessable`, `assertJsonValidationErrors(['field'])`, `assertJsonPath(...)`.
+
+Unit tests: Pest `expect($value)->toBe(...)`.
+
+## Datasets
+
+Use `->with()` for input variations (invalid amounts, missing fields). Keep AAA inside the closure.
+
+## Coverage
+
+Aim for the behaviors that can break: happy GET/create/update, auth, validation, and a few domain edges.
+
+Do **not** add tests only to raise a percentage. Do **not** chase 100%. Skip glue, getters, and framework behavior.
 
 ```bash
-php artisan test --filter=Payment
+./vendor/bin/pest --coverage
 ```
 
-## Full examples
+Needs **pcov** or **Xdebug 3**. If coverage is skipped, say so; do not invent numbers.
 
-For complete reference tests (feature coverage with auth/validation/mail/events, unit tests, mocked services, Http fakes, time travel), see [examples.md](examples.md).
+## Architecture tests (when needed)
+
+Use Pest `arch()` when a convention should fail the suite if someone breaks it (e.g. models extend `Model`, Actions stay invokable, no `dd`/`dump` in `App`). Put them in `tests/Feature` or `tests/Unit` as `*ArchTest.php`.
+
+Do not add architecture tests by default. Add them when the user asks or when a layout rule is easy to violate (for this app: `App\Actions\{Resource}\{Action}`).
+
+```php
+arch('models extend eloquent')
+    ->expect('App\Models')
+    ->toExtend('Illuminate\Database\Eloquent\Model');
+
+arch('app does not debug dump')
+    ->expect('App')
+    ->not->toUse(['dd', 'dump', 'die']);
+```
+
+Presets exist (`arch()->preset()->php()`, `->security()`). See Pest 5 architecture docs via the URL above.
+
+## Local run optimisations
+
+Always run the **narrowest** set that covers the change, then fix failures before finishing.
+
+| Goal | Command |
+| --- | --- |
+| One name / file | `php artisan test --compact --filter=should-list-projects` |
+| File | `php artisan test --compact tests/Feature/ProjectTest.php` |
+| Parallel | `php artisan test --compact --parallel` |
+| TIA (changed tests only) | `./vendor/bin/pest --tia` |
+| Coverage | `./vendor/bin/pest --coverage` |
+| UI tests | `./vendor/bin/pest tests/Browser --compact` |
+| UI probe | `./vendor/bin/pest --agent='visit("/")->assertSee("Your projects");'` |
+
+`--tia` needs pcov or Xdebug 3. If Pest says TIA is skipped, run `--filter` instead.
+
+`php artisan test` accepts Pest flags (`--filter`, `--parallel`, `--compact`, `--coverage`). Use `./vendor/bin/pest` when a flag is Pest-only (`--tia`, `--agent`).
+
+## Pest Agent (UI and one-off probes)
+
+This project has **Pest Agent** (`pestphp/pest-plugin-agent`) and **browser tests** (`pestphp/pest-plugin-browser` + Playwright Chromium). Use them when the **UI must look or behave as expected** (Blade, CSS, responsive layout, clicks).
+
+Lasting UI checks live in `tests/Browser`. That folder uses `TestCase` + `RefreshDatabase` (see `tests/Pest.php`). Call `assertNoJavaScriptErrors()` on every browser test. Build frontend assets first if the UI looks unstyled (`npm run build`).
+
+Always wrap `--agent` snippets in **single quotes** so the shell does not eat `$user`:
+
+```bash
+./vendor/bin/pest --agent='visit("/")->assertSee("Your projects");'
+./vendor/bin/pest --agent='$user = \App\Models\User::factory()->create(); $project = \App\Models\Project::factory()->for($user, "owner")->create(["name" => "Meetup board"]); visit("/")->assertSee("Meetup board");'
+./vendor/bin/pest --agent='visit("/")->on()->mobile()->screenshot(filename: "board-mobile");'
+```
+
+Backend-only probe (no browser):
+
+```bash
+./vendor/bin/pest --agent='$user = \App\Models\User::factory()->create(); $this->actingAs($user)->get("/")->assertOk();'
+```
+
+Run committed UI tests with:
+
+```bash
+./vendor/bin/pest tests/Browser --compact
+```
+
+`--headed` watches the browser; `--debug` pauses on failure. Failure screenshots go to `tests/Browser/Screenshots` (gitignored).
+
+Agent is a **probe**, not a replacement for `tests/Feature` or `tests/Browser`. If the behavior should stay, write a real test. Do not add more Pest plugins unless the user asks.
+
+## CI and git
+
+- If any CI step is failing, **do not commit** and **do not push**.
+- Fix the failure (or the tests) first, then commit only if the user asked.
+
+## After writing tests
+
+```bash
+php artisan test --compact --filter=YourTestFileOrName
+```
+
+Ask the user to run the full suite (`php artisan test --compact`) once the focused run is green.
